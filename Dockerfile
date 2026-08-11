@@ -26,7 +26,7 @@ ENV UV_NO_DEV=1
 ENV UV_TOOL_BIN_DIR=/usr/local/bin
 
 # Install the project's dependencies using the lockfile and settings
-RUN --mount=type=cache,target=/root/.cache/uv \
+RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --no-install-project
@@ -41,7 +41,7 @@ COPY . /app
 # Without INSTALL_OTEL the otel packages are absent and configure() in
 # src/telemetry.py silently skips setup — no overhead, no traces.
 ARG INSTALL_OTEL=0
-RUN --mount=type=cache,target=/root/.cache/uv \
+RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     if [ "$INSTALL_OTEL" = "1" ]; then \
         uv sync --locked --group otel; \
     else \
