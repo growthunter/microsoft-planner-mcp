@@ -1,61 +1,22 @@
-# Dockerfile sourced from https://github.com/astral-sh/uv-docker-example/blob/main/Dockerfile
-# Use a Python image with uv pre-installed
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+FROM python:3.12-slim
 
-LABEL org.opencontainers.image.source=https://github.com/aixolotl/microsoft-planner-mcp
-LABEL org.opencontainers.image.description="Microsoft Planner MCP server with FastMCP Entra ID OBO Authentication"
-LABEL org.opencontainers.image.licenses=MIT
-
-# Setup a non-root user
-RUN groupadd --system --gid 999 nonroot \
- && useradd --system --gid 999 --uid 999 --create-home nonroot
-
-# Install the project into `/app`
 WORKDIR /app
 
-# Enable bytecode compilation
-ENV UV_COMPILE_BYTECODE=1
+# Install uv
+RUN pip install uv
 
-# Copy from the cache instead of linking since it's a mounted volume
-ENV UV_LINK_MODE=copy
+# Copy dependency files first
+COPY pyproject.toml .
+COPY uv.lock .
 
-# Omit development dependencies
-ENV UV_NO_DEV=1
+# Install dependencies (no cache mounts - Railway compatible)
+RUN uv sync --frozen --no-dev
 
-# Ensure installed tools can be executed out of the box
-ENV UV_TOOL_BIN_DIR=/usr/local/bin
+# Copy source code
+COPY src/ ./src/
 
-# Install the project's dependencies using the lockfile and settings
-RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-install-project
+# Expose port
+EXPOSE 8000
 
-# Then, add the rest of the project source code and install it
-# Installing separately from its dependencies allows optimal layer caching
-COPY . /app
-
-# Install core project. Pass INSTALL_OTEL=1 at build time (via compose.yaml
-# build.args) to also install the optional otel dependency group so traces
-# are exported to the OTLP backend configured by OTEL_EXPORTER_OTLP_ENDPOINT.
-# Without INSTALL_OTEL the otel packages are absent and configure() in
-# src/telemetry.py silently skips setup — no overhead, no traces.
-ARG INSTALL_OTEL=0
-RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
-    if [ "$INSTALL_OTEL" = "1" ]; then \
-        uv sync --locked --group otel; \
-    else \
-        uv sync --locked; \
-    fi
-
-# Place executables in the environment at the front of the path
-ENV PATH="/app/.venv/bin:$PATH"
-
-# Reset the entrypoint, don't invoke `uv`
-ENTRYPOINT []
-
-# Use the non-root user to run our application
-USER nonroot
-
-# Run the MCP server
+# Run the server
 CMD ["uv", "run", "uvicorn", "src.server:app", "--host", "0.0.0.0", "--port", "8000"]
